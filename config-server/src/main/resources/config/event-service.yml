@@ -16,7 +16,7 @@ management:
     sampling:
       probability: 1.0
   health:
-    circuitbreakers:
+    circuit-breakers:
       enabled: true
   endpoints:
     web:
