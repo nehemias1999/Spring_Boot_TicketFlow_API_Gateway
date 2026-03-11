@@ -57,6 +57,12 @@ public class EventService implements IEventService {
         return eventApplicationMapper.toResponse(savedEvent);
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Throws {@link EventNotFoundException} if no active event with the given ID exists.
+     * </p>
+     */
     @Override
     @Transactional(readOnly = true)
     public EventResponse getById(String id) {
@@ -72,18 +78,34 @@ public class EventService implements IEventService {
         return eventApplicationMapper.toResponse(event);
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Delegates pagination directly to the persistence port and maps
+     * each domain object to a response DTO.
+     * </p>
+     */
     @Override
     @Transactional(readOnly = true)
-    public Page<EventResponse> getAll(Pageable pageable) {
-        log.info("Retrieving all event entries - page: {}, size: {}", pageable.getPageNumber(), pageable.getPageSize());
+    public Page<EventResponse> getAll(String title, String location, Pageable pageable) {
+        log.info("Retrieving all event entries - title: {}, location: {}, page: {}, size: {}",
+                title, location, pageable.getPageNumber(), pageable.getPageSize());
 
-        Page<EventResponse> result = eventPersistencePort.findAllByDeletedFalse(pageable)
+        Page<EventResponse> result = eventPersistencePort.findAllByFilters(title, location, pageable)
                 .map(eventApplicationMapper::toResponse);
 
         log.info("Retrieved {} event entries out of {} total", result.getNumberOfElements(), result.getTotalElements());
         return result;
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Loads the existing event, applies the updates via the application mapper,
+     * and persists the changes. Throws {@link EventNotFoundException} if the event
+     * does not exist or has been soft-deleted.
+     * </p>
+     */
     @Override
     public EventResponse update(String id, UpdateEventRequest request) {
         log.info("Updating event entry with id: {}", id);
@@ -101,6 +123,14 @@ public class EventService implements IEventService {
         return eventApplicationMapper.toResponse(savedEvent);
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Sets the {@code deleted} flag to {@code true} and persists the change.
+     * The record remains in the database and is excluded from active queries.
+     * Throws {@link EventNotFoundException} if the event does not exist.
+     * </p>
+     */
     @Override
     public void delete(String id) {
         log.info("Soft-deleting event entry with id: {}", id);

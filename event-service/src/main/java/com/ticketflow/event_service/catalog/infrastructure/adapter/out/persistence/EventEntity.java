@@ -2,6 +2,7 @@ package com.ticketflow.event_service.catalog.infrastructure.adapter.out.persiste
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EntityListeners;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
@@ -9,6 +10,9 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.springframework.data.annotation.CreatedDate;
+import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -25,6 +29,7 @@ import java.time.LocalDateTime;
  */
 @Entity
 @Table(name = "events")
+@EntityListeners(AuditingEntityListener.class)
 @Getter
 @Setter
 @Builder
@@ -77,14 +82,16 @@ public class EventEntity {
     private boolean deleted = false;
 
     /**
-     * Timestamp when the record was created.
+     * Timestamp when the record was created. Populated automatically by JPA auditing.
      */
+    @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     /**
-     * Timestamp when the record was last updated. {@code null} if never updated.
+     * Timestamp when the record was last updated. Populated automatically by JPA auditing.
      */
+    @LastModifiedDate
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 }

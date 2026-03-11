@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -81,10 +82,16 @@ public class EventController {
     @GetMapping
     public ResponseEntity<Page<EventResponse>> getAll(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        log.info("GET /api/v1/events - Request received to retrieve all events - page: {}, size: {}", page, size);
-        Pageable pageable = PageRequest.of(page, size);
-        Page<EventResponse> response = eventServicePort.getAll(pageable);
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String title,
+            @RequestParam(required = false) String location,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+        log.info("GET /api/v1/events - Request received - page: {}, size: {}, title: {}, location: {}, sortBy: {}, sortDir: {}",
+                page, size, title, location, sortBy, sortDir);
+        Sort sort = "asc".equalsIgnoreCase(sortDir) ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
+        Pageable pageable = PageRequest.of(page, size, sort);
+        Page<EventResponse> response = eventServicePort.getAll(title, location, pageable);
         log.info("GET /api/v1/events - Retrieved {} events (page {} of {})", response.getNumberOfElements(), response.getNumber(), response.getTotalPages());
         return ResponseEntity.ok(response);
     }

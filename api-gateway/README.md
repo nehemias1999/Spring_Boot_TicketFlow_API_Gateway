@@ -1,93 +1,273 @@
-# API Gateway - TicketFlow Microservices Project
+# api-gateway
+
+![Java 21](https://img.shields.io/badge/Java-21-blue)
+![Spring Boot 3.5.4](https://img.shields.io/badge/Spring%20Boot-3.5.4-brightgreen)
+![Spring Cloud 2025.0.0](https://img.shields.io/badge/Spring%20Cloud-2025.0.0-brightgreen)
+
+Single entry point for all client requests in the **TicketFlow** ticket reservation system. Handles routing, load balancing, resilience, CORS, and correlation ID propagation across microservices.
+
+---
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Role in the Architecture](#role-in-the-architecture)
+3. [Tech Stack](#tech-stack)
+4. [Routing](#routing)
+5. [Filters](#filters)
+6. [Fallback](#fallback)
+7. [Configuration](#configuration)
+8. [Running the Service](#running-the-service)
+9. [Running Tests](#running-tests)
+10. [Health & Monitoring](#health--monitoring)
+
+---
 
 ## Overview
-This project is part of the **Spring Boot TicketFlow API**, an incremental microservices system for ticket booking. The API Gateway acts as the single entry point for all client requests, routing them to the appropriate backend services and handling cross-cutting concerns such as security, logging, and resilience.
 
-## Technologies Used
-- **Java 21**
-- **Spring Boot 3.x / 4.x**
-- **Spring Cloud Gateway**
-- **Spring Cloud Netflix Eureka (Service Discovery)**
-- **Spring Cloud Config (Centralized Configuration)**
-- **Maven**
-- **Netty (Reactive HTTP Server)**
-- **Docker** (optional, for containerization)
+`api-gateway` is a **Spring Cloud Gateway** service built on a reactive Netty server. It sits in front of all backend microservices and is the only component directly reachable by external clients. It resolves downstream service addresses dynamically via Eureka and fetches its route configuration from the config-server at startup.
 
-## Architecture
-The project follows **Hexagonal Architecture** (Ports and Adapters) and **Vertical Slicing** principles. It is composed of several microservices:
+---
 
-- **API Gateway**: Entry point for all external requests. Handles routing, load balancing, security, and resilience.
-- **Config Server**: Centralized configuration management for all services.
-- **Discovery Service (Eureka Server)**: Service registry for dynamic discovery of microservices.
-- **Event Service**: Manages event event and ticketing logic.
+## Role in the Architecture
 
-All services communicate over HTTP using REST APIs. Service discovery and configuration are managed centrally.
+```
+                         Client
+                           │
+                           ▼
+          ┌────────────────────────────────┐
+          │           api-gateway           │
+          │          localhost:8080          │
+          │                                  │
+          │  CorrelationIdFilter (global)    │
+          │  CircuitBreaker + Retry (route)  │
+          │  CORS (global)                   │
+          └────────────────┬────────────────┘
+                           │ lb://event-service
+                           ▼
+                     event-service
+                     (port 8081)
+```
 
-## Service Responsibilities
-- **API Gateway**: 
-  - Routes incoming requests to backend services.
-  - Provides a single endpoint for clients.
-  - Handles authentication, authorization, and request filtering.
-  - Implements resilience patterns (circuit breaker, retries).
-- **Config Server**: 
-  - Stores and serves configuration properties for all microservices.
-  - Enables dynamic configuration updates without redeploying services.
-- **Discovery Service**: 
-  - Registers all running microservices.
-  - Enables dynamic service lookup and load balancing.
-- **Event Service**: 
-  - Manages events, tickets, and related business logic.
-  - Exposes REST endpoints for event event operations.
+**Startup order** — the discovery-service and config-server must be running before the api-gateway starts, since the gateway registers with Eureka and fetches its routes from the config-server.
 
-## How to Run the Project
-1. **Clone the repository:**
-   ```sh
-   git clone <repository-url>
-   cd Spring_Boot_TicketFlow_API
-   ```
-2. **Start the Config Server:**
-   ```sh
-   cd config-server
-   ./mvnw spring-boot:run
-   ```
-3. **Start the Discovery Service:**
-   ```sh
-   cd discovery-service
-   ./mvnw spring-boot:run
-   ```
-4. **Start the Event Service:**
-   ```sh
-   cd event-service
-   ./mvnw spring-boot:run
-   ```
-5. **Start the API Gateway:**
-   ```sh
+---
+
+## Tech Stack
+
+| Category | Technology |
+|----------|-----------|
+| Language | Java 21 |
+| Framework | Spring Boot 3.5.4 |
+| Cloud | Spring Cloud 2025.0.0 (Gateway, Config, Eureka, LoadBalancer) |
+| Resilience | Resilience4j (CircuitBreaker via Spring Cloud CircuitBreaker) |
+| Monitoring | Spring Boot Actuator |
+| Testing | JUnit 5 |
+| Build | Maven |
+
+---
+
+## Routing
+
+Routes are defined in `config-server/src/main/resources/config/api-gateway.yml` and loaded at startup.
+
+| Route ID | URI | Predicate | Description |
+|----------|-----|-----------|-------------|
+| `event-service` | `lb://event-service` | `Path=/api/v1/events/**` | Forwards all event API requests to the event-service, resolved via Eureka load balancer |
+
+---
+
+## Filters
+
+### Global — `CorrelationIdFilter`
+
+Applied to every request before it reaches any route filter or downstream service.
+
+- Reads the `X-Correlation-Id` header from the incoming request.
+- If absent or blank, generates a new UUID and injects it.
+- Propagates the header downstream in the forwarded request.
+- Adds the same header to the outgoing response so the client can trace the request end-to-end.
+- Logs `[correlationId] METHOD /path` for every request.
+
+### Per-route — CircuitBreaker
+
+Wraps the `event-service` route with a Resilience4j circuit breaker named `eventServiceCB`.
+
+| Property | Value |
+|----------|-------|
+| Sliding window size | 10 calls |
+| Failure rate threshold | 50% |
+| Wait duration in open state | 10 s |
+| Calls permitted in half-open state | 3 |
+| Auto transition to half-open | enabled |
+
+When the circuit is open, requests are forwarded to `/fallback/events` instead of the downstream service.
+
+### Per-route — Retry
+
+Automatically retries failed `GET` requests to the `event-service`.
+
+| Property | Value |
+|----------|-------|
+| Retries | 3 |
+| Retried statuses | `BAD_GATEWAY`, `SERVICE_UNAVAILABLE` |
+| Methods | `GET` only |
+| First backoff | 100 ms |
+| Max backoff | 500 ms |
+| Backoff factor | 2× |
+
+### Global — CORS
+
+A global CORS policy is applied to all routes:
+
+| Property | Value |
+|----------|-------|
+| Allowed origins | `*` |
+| Allowed methods | `GET`, `POST`, `PUT`, `DELETE`, `OPTIONS` |
+| Allowed headers | `*` |
+
+---
+
+## Fallback
+
+When the circuit breaker for the `event-service` is open, the gateway forwards the request to the internal `FallbackController`, which returns a structured `503 Service Unavailable` response:
+
+```json
+{
+  "timestamp": "2026-03-11T10:00:00",
+  "status":    503,
+  "error":     "Service Unavailable",
+  "message":   "The event service is temporarily unavailable. Please try again later.",
+  "path":      "/fallback/events"
+}
+```
+
+---
+
+## Configuration
+
+The gateway's main `application.yml` only declares the application name and the optional config-server import. All routing, resilience, CORS, and Actuator settings are served by the config-server:
+
+```yaml
+# src/main/resources/application.yml
+spring:
+  application:
+    name: api-gateway
+  config:
+    import: "optional:configserver:http://localhost:8088"
+```
+
+Key properties served by the config-server (`api-gateway.yml`):
+
+```yaml
+server:
+  port: 8080
+
+spring:
+  cloud:
+    gateway:
+      globalcors:
+        corsConfigurations:
+          '[/**]':
+            allowedOrigins: "*"
+            allowedMethods: [GET, POST, PUT, DELETE, OPTIONS]
+            allowedHeaders: "*"
+      server:
+        webflux:
+          routes:
+            - id: event-service
+              uri: lb://event-service
+              predicates:
+                - Path=/api/v1/events/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: eventServiceCB
+                    fallbackUri: forward:/fallback/events
+                - name: Retry
+                  args:
+                    retries: 3
+                    statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE
+                    methods: GET
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      eventServiceCB:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, gateway
+  endpoint:
+    health:
+      show-details: always
+```
+
+---
+
+## Running the Service
+
+### Prerequisites
+
+- Java 21
+- Maven 3.9+
+- `discovery-service` running at `localhost:8761`
+- `config-server` running at `localhost:8088`
+
+### Steps
+
+1. **Clone the repository** and navigate to the service directory:
+
+   ```bash
+   git clone <repo-url>
    cd api-gateway
-   ./mvnw spring-boot:run
    ```
 
-> **Note:** Ensure that ports used by each service (default: 8888 for config, 8761 for discovery, 8080/8081/8082 for services) are available.
+2. **Start the required services first** (in order):
 
-## Project Structure
+   ```bash
+   # 1. Discovery service
+   cd discovery-service && ./mvnw spring-boot:run
+
+   # 2. Config server
+   cd config-server && ./mvnw spring-boot:run
+
+   # 3. API Gateway
+   cd api-gateway && ./mvnw spring-boot:run
+   ```
+
+3. Verify the gateway is running:
+
+   ```bash
+   curl http://localhost:8080/actuator/health
+   ```
+
+> The config-server import is declared as `optional:`, so the gateway will still start if the config-server is unavailable — but it will have no routes configured until restarted with the config-server available.
+
+---
+
+## Running Tests
+
+```bash
+./mvnw test
 ```
-Spring_Boot_TicketFlow_API/
-├── api-gateway/         # API Gateway microservice
-├── config-server/       # Centralized configuration server
-├── discovery-service/   # Eureka service registry
-├── event-service/       # Event and ticket management service
-└── README.md            # Project overview
-```
 
-## Purpose
-The main goal of this project is to demonstrate:
-- Microservices communication patterns
-- Service discovery and registration
-- Centralized configuration
-- API Gateway routing and resilience
-- Clean, maintainable architecture using Hexagonal principles
+The test profile uses a dedicated `src/test/resources/application.yml` that disables the config-server import and the Eureka client, so the context loads without requiring any external services.
 
-## Authors
-- [Your Name]
+---
 
-## License
-This project is licensed under the MIT License.
+## Health & Monitoring
+
+Spring Boot Actuator exposes the following endpoints:
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /actuator/health` | Service health status and circuit breaker state |
+| `GET /actuator/info` | Application info |
+| `GET /actuator/metrics` | JVM and application metrics |
+| `GET /actuator/gateway/routes` | List of all configured routes |

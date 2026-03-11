@@ -38,12 +38,14 @@ public interface IEventService {
     EventResponse getById(String id);
 
     /**
-     * Retrieves a paginated list of all active (non-deleted) event entries.
+     * Retrieves a paginated and filtered list of all active (non-deleted) event entries.
      *
+     * @param title    optional title filter (case-insensitive LIKE), may be {@code null}
+     * @param location optional location filter (case-insensitive LIKE), may be {@code null}
      * @param pageable pagination and sorting parameters
      * @return a page of event response DTOs
      */
-    Page<EventResponse> getAll(Pageable pageable);
+    Page<EventResponse> getAll(String title, String location, Pageable pageable);
 
     /**
      * Updates an existing event entry with the provided data.

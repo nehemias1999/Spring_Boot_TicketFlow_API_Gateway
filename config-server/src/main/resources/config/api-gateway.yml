@@ -8,13 +8,58 @@ eureka:
   instance:
     prefer-ip-address: true
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, gateway
+  endpoint:
+    health:
+      show-details: always
+
 spring:
   cloud:
     gateway:
+      globalcors:
+        corsConfigurations:
+          '[/**]':
+            allowedOrigins: "*"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders: "*"
       server:
         webflux:
           routes:
             - id: event-service
               uri: lb://event-service
               predicates:
-                - Path=/api/v1/catalogs/**
+                - Path=/api/v1/events/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: eventServiceCB
+                    fallbackUri: forward:/fallback/events
+                - name: Retry
+                  args:
+                    retries: 3
+                    statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE
+                    methods: GET
+                    backoff:
+                      firstBackoff: 100ms
+                      maxBackoff: 500ms
+                      factor: 2
+                      basedOnPreviousValue: false
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      eventServiceCB:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true

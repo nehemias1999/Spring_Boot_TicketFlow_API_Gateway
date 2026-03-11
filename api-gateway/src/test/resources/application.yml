@@ -1,0 +1,14 @@
+spring:
+  config:
+    import: ""
+  cloud:
+    config:
+      enabled: false
+    gateway:
+      server:
+        webflux:
+          routes: []
+
+eureka:
+  client:
+    enabled: false

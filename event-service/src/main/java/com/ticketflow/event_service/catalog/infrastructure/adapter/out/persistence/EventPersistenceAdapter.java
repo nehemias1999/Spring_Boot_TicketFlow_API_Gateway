@@ -7,7 +7,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import java.util.Optional;
 
@@ -29,6 +31,13 @@ public class EventPersistenceAdapter implements IEventPersistencePort {
     private final IEventJpaRepository eventJpaRepository;
     private final IEventPersistenceMapper eventPersistenceMapper;
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Converts the domain object to a JPA entity, persists it via the JPA repository,
+     * and converts the saved entity back to a domain object.
+     * </p>
+     */
     @Override
     public Event save(Event event) {
         log.debug("Saving event entity with id: {}", event.getId());
@@ -38,6 +47,14 @@ public class EventPersistenceAdapter implements IEventPersistencePort {
         return eventPersistenceMapper.toDomain(savedEntity);
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Queries the JPA repository for an active entity and maps it to a domain object
+     * if present. Returns {@link Optional#empty()} if the entity does not exist or
+     * has been soft-deleted.
+     * </p>
+     */
     @Override
     public Optional<Event> findByIdAndDeletedFalse(String id) {
         log.debug("Finding active event entity with id: {}", id);
@@ -47,6 +64,14 @@ public class EventPersistenceAdapter implements IEventPersistencePort {
         return result;
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Fetches a page of active entities from the JPA repository and maps each
+     * one to a domain object. Pagination and sorting are handled by the provided
+     * {@link Pageable} parameters.
+     * </p>
+     */
     @Override
     public Page<Event> findAllByDeletedFalse(Pageable pageable) {
         log.debug("Finding all active event entities - page: {}, size: {}", pageable.getPageNumber(), pageable.getPageSize());
@@ -56,6 +81,13 @@ public class EventPersistenceAdapter implements IEventPersistencePort {
         return result;
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Delegates directly to the JPA repository's derived existence query,
+     * which checks both the ID and the {@code deleted = false} condition.
+     * </p>
+     */
     @Override
     public boolean existsByIdAndDeletedFalse(String id) {
         log.debug("Checking existence of active event entity with id: {}", id);
@@ -64,6 +96,41 @@ public class EventPersistenceAdapter implements IEventPersistencePort {
         return exists;
     }
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Builds a {@link Specification} combining mandatory soft-delete filter with
+     * optional title and location LIKE predicates, then delegates to the JPA
+     * repository's specification executor.
+     * </p>
+     */
+    @Override
+    public Page<Event> findAllByFilters(String title, String location, Pageable pageable) {
+        log.debug("Finding events with filters - title: {}, location: {}, page: {}, size: {}",
+                title, location, pageable.getPageNumber(), pageable.getPageSize());
+
+        Specification<EventEntity> spec = EventSpecification.notDeleted();
+        if (StringUtils.hasText(title)) {
+            spec = spec.and(EventSpecification.titleContains(title));
+        }
+        if (StringUtils.hasText(location)) {
+            spec = spec.and(EventSpecification.locationContains(location));
+        }
+
+        Page<Event> result = eventJpaRepository.findAll(spec, pageable)
+                .map(eventPersistenceMapper::toDomain);
+        log.debug("Found {} event entities out of {} total", result.getNumberOfElements(), result.getTotalElements());
+        return result;
+    }
+
+    /**
+     * {@inheritDoc}
+     * <p>
+     * Converts the updated domain object to a JPA entity and calls
+     * {@link IEventJpaRepository#save(Object)}, which performs a merge
+     * since the entity already has a persisted ID.
+     * </p>
+     */
     @Override
     public Event update(Event event) {
         log.debug("Updating event entity with id: {}", event.getId());

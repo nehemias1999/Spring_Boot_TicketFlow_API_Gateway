@@ -1,0 +1,228 @@
+package com.ticketflow.event_service.shared.infrastructure.exception;
+
+import com.ticketflow.event_service.catalog.domain.exception.EventAlreadyExistsException;
+import com.ticketflow.event_service.catalog.domain.exception.EventNotFoundException;
+import jakarta.servlet.http.HttpServletRequest;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.validation.BindingResult;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+/**
+ * Unit tests for {@link GlobalExceptionHandler}.
+ * <p>
+ * The handler is instantiated directly and invoked with a mocked
+ * {@link HttpServletRequest}, so no Spring context is required.
+ * Each test verifies that the correct HTTP status, error fields,
+ * and message are set on the returned {@link ApiErrorResponse}.
+ * </p>
+ */
+@ExtendWith(MockitoExtension.class)
+@DisplayName("GlobalExceptionHandler — unit tests")
+class GlobalExceptionHandlerTest {
+
+    private GlobalExceptionHandler handler;
+
+    @Mock
+    private HttpServletRequest request;
+
+    /**
+     * Initialises the handler and stubs the request URI before each test.
+     */
+    @BeforeEach
+    void setUp() {
+        handler = new GlobalExceptionHandler();
+        when(request.getRequestURI()).thenReturn("/api/v1/events/EVT-001");
+    }
+
+    // -------------------------------------------------------------------------
+    // handleCatalogNotFoundException — EventNotFoundException → 404
+    // -------------------------------------------------------------------------
+
+    /**
+     * Tests for {@link GlobalExceptionHandler#handleCatalogNotFoundException(EventNotFoundException, HttpServletRequest)}.
+     */
+    @Nested
+    @DisplayName("handleCatalogNotFoundException() — EventNotFoundException")
+    class HandleEventNotFoundException {
+
+        /**
+         * Verifies that a 404 response with the correct status, message, path,
+         * and non-null timestamp is returned when an event is not found.
+         */
+        @Test
+        @DisplayName("should return 404 with error details when EventNotFoundException is thrown")
+        void handleEventNotFoundException_returns404() {
+            // given
+            EventNotFoundException ex = new EventNotFoundException("EVT-001");
+
+            // when
+            ResponseEntity<ApiErrorResponse> response =
+                    handler.handleCatalogNotFoundException(ex, request);
+
+            // then
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().status()).isEqualTo(404);
+            assertThat(response.getBody().error()).isEqualTo("Not Found");
+            assertThat(response.getBody().message()).contains("EVT-001");
+            assertThat(response.getBody().path()).isEqualTo("/api/v1/events/EVT-001");
+            assertThat(response.getBody().timestamp()).isNotNull();
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // handleCatalogAlreadyExistsException — EventAlreadyExistsException → 409
+    // -------------------------------------------------------------------------
+
+    /**
+     * Tests for {@link GlobalExceptionHandler#handleCatalogAlreadyExistsException(EventAlreadyExistsException, HttpServletRequest)}.
+     */
+    @Nested
+    @DisplayName("handleCatalogAlreadyExistsException() — EventAlreadyExistsException")
+    class HandleEventAlreadyExistsException {
+
+        /**
+         * Verifies that a 409 response with the correct status, message, and path
+         * is returned when a duplicate event ID is detected.
+         */
+        @Test
+        @DisplayName("should return 409 with error details when EventAlreadyExistsException is thrown")
+        void handleEventAlreadyExistsException_returns409() {
+            // given
+            EventAlreadyExistsException ex = new EventAlreadyExistsException("EVT-001");
+
+            // when
+            ResponseEntity<ApiErrorResponse> response =
+                    handler.handleCatalogAlreadyExistsException(ex, request);
+
+            // then
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().status()).isEqualTo(409);
+            assertThat(response.getBody().error()).isEqualTo("Conflict");
+            assertThat(response.getBody().message()).contains("EVT-001");
+            assertThat(response.getBody().path()).isEqualTo("/api/v1/events/EVT-001");
+            assertThat(response.getBody().timestamp()).isNotNull();
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // handleValidationException — MethodArgumentNotValidException → 400
+    // -------------------------------------------------------------------------
+
+    /**
+     * Tests for {@link GlobalExceptionHandler#handleValidationException(MethodArgumentNotValidException, HttpServletRequest)}.
+     */
+    @Nested
+    @DisplayName("handleValidationException() — MethodArgumentNotValidException")
+    class HandleValidationException {
+
+        /**
+         * Verifies that a 400 response containing the field name and validation message
+         * is returned for a single field error.
+         */
+        @Test
+        @DisplayName("should return 400 with field error message for single validation failure")
+        void handleValidationException_singleError_returns400() {
+            // given
+            MethodArgumentNotValidException ex = mock(MethodArgumentNotValidException.class);
+            BindingResult bindingResult = mock(BindingResult.class);
+            FieldError fieldError = new FieldError("createEventRequest", "title", "Title is required");
+
+            when(ex.getBindingResult()).thenReturn(bindingResult);
+            when(bindingResult.getFieldErrors()).thenReturn(List.of(fieldError));
+            when(bindingResult.getFieldErrorCount()).thenReturn(1);
+
+            // when
+            ResponseEntity<ApiErrorResponse> response =
+                    handler.handleValidationException(ex, request);
+
+            // then
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().status()).isEqualTo(400);
+            assertThat(response.getBody().message())
+                    .contains("title")
+                    .contains("Title is required");
+        }
+
+        /**
+         * Verifies that all field errors are concatenated into a single comma-separated
+         * message when multiple validation failures occur.
+         */
+        @Test
+        @DisplayName("should concatenate multiple field errors into a single message")
+        void handleValidationException_multipleErrors_concatenatesAll() {
+            // given
+            MethodArgumentNotValidException ex = mock(MethodArgumentNotValidException.class);
+            BindingResult bindingResult = mock(BindingResult.class);
+            FieldError titleError = new FieldError("createEventRequest", "title", "Title is required");
+            FieldError descError = new FieldError("createEventRequest", "description", "Description is required");
+
+            when(ex.getBindingResult()).thenReturn(bindingResult);
+            when(bindingResult.getFieldErrors()).thenReturn(List.of(titleError, descError));
+            when(bindingResult.getFieldErrorCount()).thenReturn(2);
+
+            // when
+            ResponseEntity<ApiErrorResponse> response =
+                    handler.handleValidationException(ex, request);
+
+            // then
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().message())
+                    .contains("title")
+                    .contains("description");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // handleGenericException — Exception → 500
+    // -------------------------------------------------------------------------
+
+    /**
+     * Tests for {@link GlobalExceptionHandler#handleGenericException(Exception, HttpServletRequest)}.
+     */
+    @Nested
+    @DisplayName("handleGenericException() — unexpected Exception")
+    class HandleGenericException {
+
+        /**
+         * Verifies that a 500 response with a generic user-friendly message is
+         * returned for any unhandled exception.
+         */
+        @Test
+        @DisplayName("should return 500 with generic message for unexpected exceptions")
+        void handleGenericException_returns500() {
+            // given
+            Exception ex = new RuntimeException("Unexpected database failure");
+
+            // when
+            ResponseEntity<ApiErrorResponse> response =
+                    handler.handleGenericException(ex, request);
+
+            // then
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
+            assertThat(response.getBody()).isNotNull();
+            assertThat(response.getBody().status()).isEqualTo(500);
+            assertThat(response.getBody().error()).isEqualTo("Internal Server Error");
+            assertThat(response.getBody().message())
+                    .isEqualTo("An unexpected error occurred. Please try again later.");
+            assertThat(response.getBody().path()).isEqualTo("/api/v1/events/EVT-001");
+        }
+    }
+}

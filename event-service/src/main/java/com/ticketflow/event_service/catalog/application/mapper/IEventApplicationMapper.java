@@ -8,8 +8,6 @@ import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 import org.mapstruct.MappingTarget;
 
-import java.time.LocalDateTime;
-
 /**
  * MapStruct mapper for converting between application-layer DTOs and the domain model.
  * <p>
@@ -20,22 +18,21 @@ import java.time.LocalDateTime;
  *
  * @author TicketFlow Team
  */
-@Mapper(componentModel = "spring", imports = {LocalDateTime.class})
+@Mapper(componentModel = "spring")
 public interface IEventApplicationMapper {
 
     /**
      * Converts a {@link CreateEventRequest} DTO to a {@link Event} domain object.
      * <p>
-     * Sets {@code deleted} to {@code false}, initializes {@code createdAt}
-     * to the current timestamp, and leaves {@code updatedAt} as {@code null}
-     * since the entry has not been updated yet.
+     * Sets {@code deleted} to {@code false}. Timestamps ({@code createdAt} and
+     * {@code updatedAt}) are managed automatically by JPA auditing.
      * </p>
      *
      * @param request the creation request DTO
      * @return a new {@link Event} domain object ready to be persisted
      */
     @Mapping(target = "deleted", constant = "false")
-    @Mapping(target = "createdAt", expression = "java(LocalDateTime.now())")
+    @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     Event toDomain(CreateEventRequest request);
 
@@ -58,6 +55,6 @@ public interface IEventApplicationMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "deleted", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
-    @Mapping(target = "updatedAt", expression = "java(LocalDateTime.now())")
+    @Mapping(target = "updatedAt", ignore = true)
     void updateDomainFromRequest(UpdateEventRequest request, @MappingTarget Event event);
 }

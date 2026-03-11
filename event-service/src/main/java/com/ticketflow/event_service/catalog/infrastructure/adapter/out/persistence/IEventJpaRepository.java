@@ -3,6 +3,7 @@ package com.ticketflow.event_service.catalog.infrastructure.adapter.out.persiste
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.util.Optional;
 
@@ -15,7 +16,7 @@ import java.util.Optional;
  *
  * @author TicketFlow Team
  */
-public interface IEventJpaRepository extends JpaRepository<EventEntity, String> {
+public interface IEventJpaRepository extends JpaRepository<EventEntity, String>, JpaSpecificationExecutor<EventEntity> {
 
     /**
      * Finds an active event entity by its ID.
