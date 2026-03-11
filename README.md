@@ -1,74 +1,206 @@
-API Gateway - TicketFlow Microservices Project
-Overview
-This project is part of the Spring Boot TicketFlow API, an incremental microservices system for ticket booking. The API Gateway acts as the single entry point for all client requests, routing them to the appropriate backend services and handling cross-cutting concerns such as security, logging, and resilience.
+# TicketFlow API
 
-Technologies Used
-Java 21
-Spring Boot 3.x / 4.x
-Spring Cloud Gateway
-Spring Cloud Netflix Eureka (Service Discovery)
-Spring Cloud Config (Centralized Configuration)
-Maven
-Netty (Reactive HTTP Server)
-Docker (optional, for containerization)
-Architecture
-The project follows Hexagonal Architecture (Ports and Adapters) and Vertical Slicing principles. It is composed of several microservices:
+![Java 21](https://img.shields.io/badge/Java-21-blue)
+![Spring Boot 3.5.4](https://img.shields.io/badge/Spring%20Boot-3.5.4-brightgreen)
+![Spring Cloud 2025.0.0](https://img.shields.io/badge/Spring%20Cloud-2025.0.0-brightgreen)
+![Maven](https://img.shields.io/badge/Build-Maven-orange)
 
-API Gateway: Entry point for all external requests. Handles routing, load balancing, security, and resilience.
-Config Server: Centralized configuration management for all services.
-Discovery Service (Eureka Server): Service registry for dynamic discovery of microservices.
-Event Service: Manages event event and ticketing logic.
-All services communicate over HTTP using REST APIs. Service discovery and configuration are managed centrally.
+Microservices-based ticket reservation system built with Java 21 and Spring Boot. The project demonstrates production-oriented patterns including service discovery, centralized configuration, API gateway routing, resilience, and hexagonal architecture.
 
-Service Responsibilities
-API Gateway:
-Routes incoming requests to backend services.
-Provides a single endpoint for clients.
-Handles authentication, authorization, and request filtering.
-Implements resilience patterns (circuit breaker, retries).
-Config Server:
-Stores and serves configuration properties for all microservices.
-Enables dynamic configuration updates without redeploying services.
-Discovery Service:
-Registers all running microservices.
-Enables dynamic service lookup and load balancing.
-Event Service:
-Manages events, tickets, and related business logic.
-Exposes REST endpoints for event event operations.
-How to Run the Project
-Clone the repository:
-git clone <repository-url>
+---
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Architecture](#architecture)
+3. [Services](#services)
+4. [Tech Stack](#tech-stack)
+5. [Port Reference](#port-reference)
+6. [Startup Order](#startup-order)
+7. [Running the Project](#running-the-project)
+8. [Running All Tests](#running-all-tests)
+
+---
+
+## Overview
+
+TicketFlow is an incremental Spring Boot microservices project. Each service is independently deployable, registers itself with a central Eureka server, and fetches its configuration from a centralized config server at startup. External clients interact exclusively through the API Gateway.
+
+---
+
+## Architecture
+
+```
+                            Client
+                              │
+                              ▼
+             ┌────────────────────────────────┐
+             │           api-gateway           │
+             │           port 8080             │
+             │  routing · resilience · CORS    │
+             └────────────────┬───────────────┘
+                              │ lb://event-service
+                              ▼
+             ┌────────────────────────────────┐
+             │          event-service          │
+             │           port 8081             │
+             │   CRUD events · MySQL · Flyway  │
+             └────────────────────────────────┘
+
+     ┌──────────────────────────────────────────────┐
+     │              discovery-service                │
+     │    (Eureka Server)      port 8761             │
+     │  all services register and resolve here       │
+     └──────────────────────────────────────────────┘
+
+     ┌──────────────────────────────────────────────┐
+     │               config-server                   │
+     │    (Spring Cloud Config)    port 8088         │
+     │  serves yml config files to all services      │
+     └──────────────────────────────────────────────┘
+```
+
+All business services (api-gateway, event-service) follow **Hexagonal Architecture (Ports & Adapters)** combined with **Vertical Slicing**, keeping domain logic isolated from infrastructure concerns.
+
+---
+
+## Services
+
+### discovery-service
+Central **Netflix Eureka Server**. Every other microservice registers with it on startup and resolves the addresses of its dependencies through it at runtime. Must be the first service started.
+
+→ [discovery-service/README.md](discovery-service/README.md)
+
+---
+
+### config-server
+**Spring Cloud Config Server** running in `native` profile. Serves externalized YAML configuration files from `src/main/resources/config/` to all microservices at startup. Eliminates the need to hardcode environment-specific values inside each service.
+
+→ [config-server/README.md](config-server/README.md)
+
+---
+
+### api-gateway
+**Spring Cloud Gateway** acting as the single entry point for all client requests. Responsibilities:
+- Routes requests to downstream services resolved via Eureka load balancer
+- Global `X-Correlation-Id` propagation across all requests
+- Circuit breaker (Resilience4j) and retry per route
+- Global CORS policy
+- Structured fallback response when a downstream service is unavailable
+
+→ [api-gateway/README.md](api-gateway/README.md)
+
+---
+
+### event-service
+Business microservice that manages the **event catalog** for the TicketFlow platform. Exposes a REST API consumed by the API Gateway. Responsibilities:
+- Full CRUD with soft-delete support
+- Paginated and filterable event listings
+- Schema management via Flyway migrations
+- Jakarta Bean Validation on all inputs
+
+→ [event-service/README.md](event-service/README.md)
+
+---
+
+## Tech Stack
+
+| Category | Technology |
+|----------|-----------|
+| Language | Java 21 |
+| Framework | Spring Boot 3.5.4 |
+| Cloud | Spring Cloud 2025.0.0 |
+| Service Discovery | Netflix Eureka |
+| API Gateway | Spring Cloud Gateway (reactive Netty) |
+| Config Management | Spring Cloud Config Server (native profile) |
+| Load Balancing | Spring Cloud LoadBalancer |
+| Resilience | Resilience4j (CircuitBreaker, Retry) |
+| Persistence | Spring Data JPA, Hibernate, MySQL 8 |
+| Migrations | Flyway |
+| Mapping | MapStruct 1.6.3 |
+| Validation | Jakarta Bean Validation |
+| Monitoring | Spring Boot Actuator |
+| Testing | JUnit 5, Mockito, H2 (in-memory) |
+| Build | Maven |
+| Utils | Lombok |
+
+---
+
+## Port Reference
+
+| Service | Port |
+|---------|------|
+| discovery-service | `8761` |
+| config-server | `8088` |
+| api-gateway | `8080` |
+| event-service | `8081` |
+| ticket-service *(planned)* | `8082` |
+
+---
+
+## Startup Order
+
+Services must be started in the following order due to registration and configuration dependencies:
+
+```
+1. discovery-service   ← Eureka must be up before anyone registers
+2. config-server       ← must be up before clients fetch their config
+3. event-service       ← registers with Eureka, fetches config
+4. api-gateway         ← registers with Eureka, fetches routes from config
+```
+
+> Starting a service before its dependencies will not cause a fatal failure — Spring Cloud clients retry registration and config fetch in the background — but starting in order avoids noise in the logs.
+
+---
+
+## Running the Project
+
+### Prerequisites
+
+- Java 21
+- Maven 3.9+
+- MySQL 8 running locally on port `3306` (required by event-service)
+
+### Steps
+
+```bash
+# 1. Clone the repository
+git clone <repo-url>
 cd Spring_Boot_TicketFlow_API
-Start the Config Server:
-cd config-server
-./mvnw spring-boot:run
-Start the Discovery Service:
-cd discovery-service
-./mvnw spring-boot:run
-Start the Event Service:
-cd event-service
-./mvnw spring-boot:run
-Start the API Gateway:
-cd api-gateway
-./mvnw spring-boot:run
-Note: Ensure that ports used by each service (default: 8888 for config, 8761 for discovery, 8080/8081/8082 for services) are available.
 
-Project Structure
-Spring_Boot_TicketFlow_API/
-├── api-gateway/         # API Gateway microservice
-├── config-server/       # Centralized configuration server
-├── discovery-service/   # Eureka service registry
-├── event-service/       # Event and ticket management service
-└── README.md            # Project overview
-Purpose
-The main goal of this project is to demonstrate:
+# 2. Start discovery-service
+cd discovery-service && ./mvnw spring-boot:run
 
-Microservices communication patterns
-Service discovery and registration
-Centralized configuration
-API Gateway routing and resilience
-Clean, maintainable architecture using Hexagonal principles
-Authors
-[Your Name]
-License
-This project is licensed under the MIT License.
+# 3. Start config-server (new terminal)
+cd config-server && ./mvnw spring-boot:run
+
+# 4. Start event-service (new terminal)
+cd event-service && ./mvnw spring-boot:run
+
+# 5. Start api-gateway (new terminal)
+cd api-gateway && ./mvnw spring-boot:run
+```
+
+Once all services are up:
+
+| URL | Description |
+|-----|-------------|
+| `http://localhost:8761` | Eureka dashboard — registered instances |
+| `http://localhost:8080/api/v1/events` | Events API via the gateway |
+| `http://localhost:8080/actuator/health` | Gateway health |
+| `http://localhost:8081/actuator/health` | Event-service health |
+| `http://localhost:8088/event-service/default` | Raw config served to event-service |
+
+---
+
+## Running All Tests
+
+Each service has an isolated test configuration (H2 / no Eureka / no config-server) so tests run without any external dependencies.
+
+```bash
+# From the root — run tests for all services
+cd discovery-service && ./mvnw test
+cd config-server     && ./mvnw test
+cd api-gateway       && ./mvnw test
+cd event-service     && ./mvnw test
+```
