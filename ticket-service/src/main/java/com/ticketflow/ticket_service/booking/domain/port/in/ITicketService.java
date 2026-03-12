@@ -1,0 +1,70 @@
+package com.ticketflow.ticket_service.booking.domain.port.in;
+
+import com.ticketflow.ticket_service.booking.application.dto.request.CreateTicketRequest;
+import com.ticketflow.ticket_service.booking.application.dto.request.UpdateTicketRequest;
+import com.ticketflow.ticket_service.booking.application.dto.response.TicketResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
+/**
+ * Inbound port defining the use cases available for ticket management.
+ * <p>
+ * Implemented by the application service and called by inbound adapters
+ * (e.g., REST controllers).
+ * </p>
+ *
+ * @author TicketFlow Team
+ */
+public interface ITicketService {
+
+    /**
+     * Purchases a new ticket.
+     *
+     * @param request the creation request containing ticket details
+     * @return the created ticket response
+     */
+    TicketResponse create(CreateTicketRequest request);
+
+    /**
+     * Retrieves a ticket by its unique ID.
+     *
+     * @param id the ticket identifier
+     * @return the ticket response
+     */
+    TicketResponse getById(String id);
+
+    /**
+     * Retrieves a paginated and filtered list of tickets.
+     *
+     * @param eventId  optional filter by event ID
+     * @param userId   optional filter by user ID
+     * @param status   optional filter by ticket status
+     * @param pageable pagination and sorting parameters
+     * @return a page of ticket responses
+     */
+    Page<TicketResponse> getAll(String eventId, String userId, String status, Pageable pageable);
+
+    /**
+     * Transfers a ticket to another user (updates userId).
+     *
+     * @param id      the ticket identifier
+     * @param request the update request containing the new userId
+     * @return the updated ticket response
+     */
+    TicketResponse update(String id, UpdateTicketRequest request);
+
+    /**
+     * Cancels an active ticket.
+     *
+     * @param id the ticket identifier
+     * @return the cancelled ticket response
+     */
+    TicketResponse cancel(String id);
+
+    /**
+     * Soft-deletes a ticket by its unique ID.
+     *
+     * @param id the ticket identifier
+     */
+    void delete(String id);
+}

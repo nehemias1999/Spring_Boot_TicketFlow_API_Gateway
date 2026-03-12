@@ -53,11 +53,36 @@ spring:
                       maxBackoff: 500ms
                       factor: 2
                       basedOnPreviousValue: false
+            - id: ticket-service
+              uri: lb://ticket-service
+              predicates:
+                - Path=/api/v1/tickets/**
+              filters:
+                - name: CircuitBreaker
+                  args:
+                    name: ticketServiceCB
+                    fallbackUri: forward:/fallback/tickets
+                - name: Retry
+                  args:
+                    retries: 3
+                    statuses: BAD_GATEWAY,SERVICE_UNAVAILABLE
+                    methods: GET
+                    backoff:
+                      firstBackoff: 100ms
+                      maxBackoff: 500ms
+                      factor: 2
+                      basedOnPreviousValue: false
 
 resilience4j:
   circuitbreaker:
     instances:
       eventServiceCB:
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10s
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+      ticketServiceCB:
         slidingWindowSize: 10
         failureRateThreshold: 50
         waitDurationInOpenState: 10s
